@@ -1,0 +1,106 @@
+/**
+ * ETHICAL GUARD SECURITY ENGINE
+ * =============================
+ * Single, authoritative entry point for static security analysis
+ */
+
+import { validateInput } from "./utils/inputValidator.js";
+import { validateSyntax } from "./syntax/index.js";
+import { normalizeInput } from "./normalizers/index.js";
+import { runAllDetectors } from "./detectors/index.js";
+import { calculateRiskScore } from "./riskEngine.js";
+import { generateAttackerView } from "./attackerView/attackerView.js";
+import { generateDefenderFixes } from "./defenderView/defenderEngine.js";
+import { generateSimulatedPayloads } from "./payloads/payloadEngine.js";
+import { calculateImpact } from "./impactEngine.js";
+import { buildSummary } from "./summaryEngine.js";
+import { measureTime } from "./utils/timers.js";
+
+export function analyzeInput({ inputType = "code", content, language }) {
+  const stopTimer = measureTime();
+
+  /* 1️⃣ Validate input */
+  const validation = validateInput({ inputType, content });
+  if (!validation.valid) {
+    return {
+      success: false,
+      error: validation.message,
+      processingTime: Number(stopTimer()) || 0,
+    };
+  }
+
+  /* 2️⃣ Syntax Validation (Pre-scan gate) */
+  const syntaxCheck = validateSyntax(content, language);
+  if (!syntaxCheck.valid) {
+    return {
+      success: true,
+      analysisType: "MANUAL",
+      syntax: syntaxCheck,
+      analysis: {
+        vulnerabilities: [],
+        overallRiskScore: 0,
+      },
+      engineDecision: "HALTED_AT_SYNTAX_STAGE",
+      processingTime: Number(stopTimer()) || 0,
+    };
+  }
+
+  /* 3️⃣ Normalize input */
+  const normalizedInput = normalizeInput(inputType, content, language);
+
+  /* 4️⃣ Detect vulnerabilities */
+  const vulnerabilities = runAllDetectors(normalizedInput);
+
+  /* 4️⃣ Risk scoring */
+  const rawRiskScore =
+    vulnerabilities.length > 0
+      ? calculateRiskScore(vulnerabilities)
+      : 0;
+
+  const riskScore = Number.isFinite(rawRiskScore) ? rawRiskScore : 0;
+
+  /* 5️⃣ Attacker / Defender views */
+  const attackerView = generateAttackerView(
+    vulnerabilities,
+    normalizedInput
+  );
+
+  const defenderFixes = generateDefenderFixes(
+    vulnerabilities,
+    normalizedInput
+  );
+
+  /* 6️⃣ Ethical simulated payloads */
+  const payloads = generateSimulatedPayloads(vulnerabilities);
+
+  /* 7️⃣ Impact & summary */
+  const impactAnalysis = calculateImpact(vulnerabilities);
+  const summary = buildSummary(vulnerabilities);
+
+  /* 8️⃣ Final response */
+  return {
+    success: true,
+    syntax: syntaxCheck,
+    vulnerabilities,
+
+    // 🔑 CANONICAL RISK FIELDS
+    riskScore,
+    overallRiskScore: riskScore, // ✅ alias for DB + frontend safety
+
+    attackerView,
+    defenderFixes,
+    payloads,
+    impactAnalysis,
+    summary,
+
+    processingTime: Number(stopTimer()) || 0,
+
+    ethics: {
+      staticAnalysisOnly: true,
+      noExecution: true,
+      noLiveAttacks: true,
+    },
+  };
+}
+
+export default { analyze: analyzeInput };
